@@ -23,6 +23,16 @@ Requires Python 3.10+. The dev server (`python app.py`) binds to 127.0.0.1; set 
 
 Without `data/matches.csv`, `train.py` uses a synthetic **demo** dataset with fictional teams so you can try the pipeline offline. The UI shows a banner when demo data is in use.
 
+## Free hosting on GitHub Pages (static edition)
+
+The same predictor runs entirely in the browser, hosted free by GitHub Pages. `export_static.py` writes `site/` (`index.html`, `engine.js`, `model.json`): the ratings model, the exported gradient-boosted trees, the blend and the injury adjustment all run in JavaScript, and `tools/verify_static.js` checks them against the Python models.
+
+The workflow `.github/workflows/pages.yml` downloads fresh data, trains, exports, verifies and deploys, on every push to `main` and daily at 03:00 UTC.
+
+One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**, then **Actions → Deploy website (GitHub Pages) → Run workflow**. The site appears at `https://<username>.github.io/<repository>/`.
+
+Notes: on a free GitHub account Pages needs a **public** repository; stored injury lists (`data/injuries.json`, the PUT endpoint) don't exist in the static edition, but injuries entered on the page work; the export refuses to publish models trained on demo data. To try it locally: `python train.py && python export_static.py --allow-demo`, then serve `site/` with `python -m http.server -d site`.
+
 ## Deploy with Docker (auto-refreshing)
 
 ```bash

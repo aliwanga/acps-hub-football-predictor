@@ -99,15 +99,29 @@
   </footer>
 </main>
 
+<script src="engine.js" onerror="void 0"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-fetch('/api/teams').then(r => r.json()).then(d => {
+// Works in two modes: with the Python server (/api/...) or as a static site (engine.js + model.json).
+const STATIC = window.StaticEngine || null;
+const apiTeams = () => STATIC ? STATIC.teams() : fetch('/api/teams').then(r => r.json());
+async function apiPredict(body) {
+  if (STATIC) {
+    try { return {ok: true, data: await STATIC.predict(body)}; }
+    catch (e) { return {ok: false, data: {error: e.message}}; }
+  }
+  const res = await fetch('/api/predict', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  return {ok: res.ok, data: await res.json()};
+}
+
+apiTeams().then(d => {
   $('teams').innerHTML = d.teams.map(t => `<option value="${esc(t.name)}">${t.elo}</option>`).join('');
   $('demo').hidden = !d.data_is_demo;
-  $('sub').textContent += ` Data through ${d.data_through}.`;
-});
+  $('sub').textContent += ` Data through ${d.data_through}.` + (d.static_edition ? ' Updated daily.' : '');
+}).catch(e => { $('err').textContent = 'Could not load model data: ' + e.message; });
 
 function addInj(side) {
   const div = document.createElement('div');
@@ -126,11 +140,10 @@ async function predict() {
   $('err').textContent = ''; $('go').disabled = true;
   try {
     const hasInj = $('inj-home').children.length || $('inj-away').children.length;
-    const res = await fetch('/api/predict', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({home: $('home').value.trim(), away: $('away').value.trim(), neutral: $('neutral').checked,
-        ...(hasInj ? {injuries: {home: readInj('home'), away: readInj('away')}} : {})})});
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || 'Request failed');
+    const {ok, data: d} = await apiPredict({home: $('home').value.trim(), away: $('away').value.trim(),
+      neutral: $('neutral').checked,
+      ...(hasInj ? {injuries: {home: readInj('home'), away: readInj('away')}} : {})});
+    if (!ok) throw new Error(d.error || 'Request failed');
     render(d);
   } catch (e) { $('err').textContent = e.message; }
   $('go').disabled = false;
