@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACPS-HUB FOOTBALL PREDICTOR</title>
+<meta name="description" content="Football match predictions from Elo ratings, Poisson goal models and machine learning, adjusted for injuries.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0e1411;--card:#16201a;--line:#26352c;--text:#e8f1ea;--mut:#8fa396;
+        --home:#4ade80;--draw:#a3a3a3;--away:#f59e0b;--accent:#4ade80;--bad:#f87171}
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f4f7f4;--card:#fff;--line:#dbe5dd;--text:#13201a;--mut:#5b6e62;
+          --home:#16a34a;--draw:#737373;--away:#d97706;--accent:#16a34a;--bad:#dc2626}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+  main{max-width:720px;margin:0 auto;padding:16px}
+  .brand{font-size:.75rem;letter-spacing:.12em;color:var(--accent);font-weight:700;margin:6px 0 0}
+  footer{margin:22px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-align:center;color:var(--mut);font-size:.82rem;line-height:1.6}
+  footer b{color:var(--text)}
+  h1{font-size:1.4rem;margin:2px 0 2px} h2{font-size:1rem;margin:0 0 10px}
+  .sub{color:var(--mut);margin:0 0 14px;font-size:.9rem}
+  .banner{background:#7c2d12;color:#ffedd5;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:.88rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  label{display:block;font-size:.8rem;color:var(--mut);margin-bottom:4px}
+  input,select,button{width:100%;font:inherit;color:var(--text);background:var(--bg);
+        border:1px solid var(--line);border-radius:8px;padding:10px}
+  button{background:var(--accent);color:#06210f;border:0;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;color:var(--mut);border:1px solid var(--line);font-weight:500}
+  .check{display:flex;gap:8px;align-items:center;margin:10px 0 0;color:var(--mut)}
+  .check input{width:auto}
+  .inj{display:grid;grid-template-columns:1fr 70px 90px 36px;gap:6px;margin-top:6px}
+  .inj input,.inj select{padding:8px}
+  .bar{display:flex;height:34px;border-radius:8px;overflow:hidden;margin:8px 0}
+  .bar div{display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:600;color:#06210f;min-width:0}
+  .legend{display:flex;justify-content:space-between;font-size:.8rem;color:var(--mut)}
+  .big{font-size:1.15rem;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  td,th{padding:5px 4px;text-align:left;border-bottom:1px solid var(--line)} th{color:var(--mut);font-weight:500}
+  .err{color:var(--bad);margin-top:8px} .mut{color:var(--mut);font-size:.85rem}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">ACPS HUB</div>
+  <h1>⚽ ACPS-HUB FOOTBALL PREDICTOR</h1>
+  <p class="sub" id="sub">Elo + Poisson ratings blended with a machine-learning model.</p>
+  <div id="demo" class="banner" hidden>Demo data: the teams are fictional. Run <code>python fetch_data.py</code> then <code>python train.py</code> for real teams.</div>
+
+  <div class="card">
+    <div class="row">
+      <div><label for="home">Home team</label><input id="home" list="teams" autocomplete="off" placeholder="e.g. Brazil"></div>
+      <div><label for="away">Away team</label><input id="away" list="teams" autocomplete="off" placeholder="e.g. Argentina"></div>
+    </div>
+    <datalist id="teams"></datalist>
+    <label class="check"><input type="checkbox" id="neutral"> Neutral venue</label>
+
+    <details style="margin-top:12px"><summary class="mut">Injuries &amp; absences (optional)</summary>
+      <div class="mut" style="margin-top:8px">Importance: 1 = best player, 0.5 = regular starter, 0.2 = rotation.</div>
+      <h2 style="margin-top:10px">Home</h2><div id="inj-home"></div>
+      <button class="ghost" style="margin-top:6px" onclick="addInj('home')">+ add player</button>
+      <h2 style="margin-top:14px">Away</h2><div id="inj-away"></div>
+      <button class="ghost" style="margin-top:6px" onclick="addInj('away')">+ add player</button>
+    </details>
+
+    <button style="margin-top:14px" onclick="predict()" id="go">Predict</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="out" hidden>
+    <div class="card">
+      <div class="big" id="headline"></div>
+      <div class="bar" id="bar"></div>
+      <div class="legend"><span id="l-home"></span><span id="l-draw"></span><span id="l-away"></span></div>
+    </div>
+    <div class="card">
+      <h2>Likely scorelines</h2>
+      <div class="chips" id="scores"></div>
+      <p class="mut" id="xg"></p>
+    </div>
+    <div class="card">
+      <h2>Why</h2>
+      <table id="why"></table>
+    </div>
+    <div class="card">
+      <h2>Model breakdown</h2>
+      <table id="models"></table>
+      <p class="mut" id="wml"></p>
+    </div>
+  </div>
+  <p class="mut">Predictions are probabilities from historical patterns, not certainties. Football has a lot of randomness.</p>
+  <footer>
+    <b>© 2026 ACPS HUB. All rights reserved.</b><br>
+    Developed by Allan.<br>
+    Building smart solutions for better communities through technology and innovation
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+fetch('/api/teams').then(r => r.json()).then(d => {
+  $('teams').innerHTML = d.teams.map(t => `<option value="${esc(t.name)}">${t.elo}</option>`).join('');
+  $('demo').hidden = !d.data_is_demo;
+  $('sub').textContent += ` Data through ${d.data_through}.`;
+});
+
+function addInj(side) {
+  const div = document.createElement('div');
+  div.className = 'inj';
+  div.innerHTML = `<input placeholder="Player" class="p"><input type="number" class="i" min="0" max="1" step="0.1" value="0.5">
+    <select class="s"><option value="out">Out</option><option value="doubtful">Doubtful</option><option value="minor">Minor</option></select>
+    <button class="ghost" style="padding:6px" onclick="this.parentNode.remove()">✕</button>`;
+  $('inj-' + side).appendChild(div);
+}
+const readInj = side => [...$('inj-' + side).children].map(d => ({
+  player: d.querySelector('.p').value || 'Unnamed',
+  importance: parseFloat(d.querySelector('.i').value) || 0,
+  status: d.querySelector('.s').value}));
+
+async function predict() {
+  $('err').textContent = ''; $('go').disabled = true;
+  try {
+    const hasInj = $('inj-home').children.length || $('inj-away').children.length;
+    const res = await fetch('/api/predict', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({home: $('home').value.trim(), away: $('away').value.trim(), neutral: $('neutral').checked,
+        ...(hasInj ? {injuries: {home: readInj('home'), away: readInj('away')}} : {})})});
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Request failed');
+    render(d);
+  } catch (e) { $('err').textContent = e.message; }
+  $('go').disabled = false;
+}
+
+function render(d) {
+  const p = d.probabilities, name = {home_win: d.home, draw: 'Draw', away_win: d.away};
+  $('headline').textContent = d.pick === 'draw' ? 'Most likely: a draw' : `Most likely: ${name[d.pick]} win`;
+  const seg = (v, c) => `<div style="width:${v}%;background:var(${c})">${v >= 9 ? v.toFixed(0) + '%' : ''}</div>`;
+  $('bar').innerHTML = seg(p.home_win, '--home') + seg(p.draw, '--draw') + seg(p.away_win, '--away');
+  $('l-home').textContent = `${d.home} ${p.home_win}%`;
+  $('l-draw').textContent = `Draw ${p.draw}%`;
+  $('l-away').textContent = `${d.away} ${p.away_win}%`;
+  $('scores').innerHTML = d.likely_scores.map(s => `<span class="chip">${s.score} · ${s.probability}%</span>`).join('');
+  $('xg').textContent = `Expected goals: ${d.expected_goals.home} – ${d.expected_goals.away}`;
+  const f = d.factors, inj = f.injuries;
+  const injTxt = s => inj[s].players.length ? `${inj[s].players.length} out/doubtful (−${inj[s].elo_penalty} Elo)` : 'none';
+  $('why').innerHTML = `<tr><th></th><th>${esc(d.home)}</th><th>${esc(d.away)}</th></tr>
+    <tr><td>Elo rating</td><td>${f.elo.home}</td><td>${f.elo.away}</td></tr>
+    <tr><td>Elo after injuries</td><td>${f.elo_after_injuries.home}</td><td>${f.elo_after_injuries.away}</td></tr>
+    <tr><td>Form (pts/game, last 5)</td><td>${f.recent_form_points_per_game.home}</td><td>${f.recent_form_points_per_game.away}</td></tr>
+    <tr><td>Rest days</td><td>${f.rest_days.home}</td><td>${f.rest_days.away}</td></tr>
+    <tr><td>Injuries</td><td>${injTxt('home')}</td><td>${injTxt('away')}</td></tr>`;
+  const m = d.models, row = (n, x) => `<tr><td>${n}</td><td>${x.home_win}%</td><td>${x.draw}%</td><td>${x.away_win}%</td></tr>`;
+  $('models').innerHTML = `<tr><th></th><th>Home</th><th>Draw</th><th>Away</th></tr>
+    ${row('Ratings (Elo+Poisson)', m.ratings)}${row('Machine learning', m.ml)}${row('<b>Blend</b>', p)}`;
+  $('wml').textContent = `Blend weight on ML model: ${m.weight_ml}`;
+  $('out').hidden = false;
+  $('out').scrollIntoView({behavior: 'smooth'});
+}
+</script>
+</body>
+</html>

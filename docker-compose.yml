@@ -1,0 +1,28 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - appdata:/app/data     # matches.csv + injuries.json
+      - models:/app/model
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}   # set in a .env file to enable stored-injury writes
+    restart: unless-stopped
+
+  # Fetches fresh results and retrains every day; web hot-reloads the new model.
+  retrainer:
+    build: .
+    command: ["python", "refresh.py", "--loop", "--hour", "3"]
+    volumes:
+      - appdata:/app/data
+      - models:/app/model
+    depends_on:
+      - web
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+
+volumes:
+  appdata:
+  models:
